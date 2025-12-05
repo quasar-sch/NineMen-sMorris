@@ -13,6 +13,7 @@
   --black-piece:#020617;
   --black-border:#e5e7eb;
 }
+
 *{box-sizing:border-box;}
 
 body{
@@ -22,6 +23,8 @@ body{
   font-family:ui-sans-serif,system-ui,-apple-system,"Apple SD Gothic Neo","Noto Sans KR",Segoe UI,Roboto,Helvetica,Arial;
   text-align:center;
 }
+
+h1{margin-top:0;}
 
 button{
   padding:10px 16px;
@@ -38,11 +41,25 @@ button:hover{
   background:#f9fafb;
   box-shadow:0 4px 10px rgba(0,0,0,0.12);
 }
+
 .hidden{display:none;}
 
 #game-screen,#start-screen{
   max-width:640px;
   margin:0 auto;
+}
+
+#info-bar{
+  margin-bottom:8px;
+  font-size:15px;
+}
+#info-bar>div{margin:2px 0;}
+
+#role-text{
+  font-size:13px;
+  color:#4b5563;
+  margin-bottom:8px;
+  min-height:18px;
 }
 
 #board-wrapper{display:flex;justify-content:center;}
@@ -59,7 +76,7 @@ button:hover{
   overflow:hidden;
 }
 
-/* SVG 라인 (이동 가능 경로만) */
+/* 이동 가능 경로 라인 (adjacency 기반) */
 #edges{
   position:absolute;
   inset:0;
@@ -71,41 +88,73 @@ button:hover{
   stroke-linecap:round;
 }
 
-/* 말/점 */
+/* 24개 점(말) */
 .cell{
-  width:24px;height:24px;border-radius:50%;
-  position:absolute;transform:translate(-50%,-50%);
-  cursor:pointer;z-index:1;
+  width:24px;
+  height:24px;
+  border-radius:50%;
+  position:absolute;
+  transform:translate(-50%,-50%);
+  z-index:1;
+  cursor:pointer;
 }
-.cell.empty{background:#e5e7eb;border:2px solid var(--board-edge);}
+.cell.empty{
+  background:#e5e7eb;
+  border:2px solid var(--board-edge);
+}
 .cell.W{
-  background:#fef3c7;border:3px solid var(--white-border);
+  background:var(--white-piece);
+  border:3px solid var(--white-border);
   box-shadow:0 0 0 2px rgba(255,255,255,0.7);
 }
 .cell.B{
-  background:#020617;border:3px solid var(--black-border);
+  background:var(--black-piece);
+  border:3px solid var(--black-border);
   box-shadow:0 0 0 2px rgba(0,0,0,0.5);
 }
-.cell.selected{box-shadow:0 0 0 4px rgba(59,130,246,0.9);}
+.cell.selected{
+  box-shadow:0 0 0 4px rgba(59,130,246,0.9);
+}
 
+#hint-text{
+  margin-top:8px;
+  font-size:13px;
+  color:#4b5563;
+  min-height:18px;
+}
+
+/* 결과 오버레이 */
 #result-overlay{
-  position:fixed;inset:0;
+  position:fixed;
+  inset:0;
   background:rgba(15,23,42,0.55);
-  display:flex;align-items:center;justify-content:center;
-  z-index:1000;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:999;
 }
 #result-overlay.hidden{display:none;}
 #result-box{
-  background:#111827;color:#f9fafb;
-  padding:20px;border-radius:16px;
+  background:#111827;
+  color:#f9fafb;
+  padding:20px;
+  border-radius:14px;
   border:1px solid #4b5563;
   min-width:260px;
+}
+#result-message{
+  font-size:22px;
+  margin-bottom:10px;
+}
+#result-box p{
+  margin:4px 0 14px;
+  font-size:14px;
+  color:#e5e7eb;
 }
 </style>
 </head>
 
 <body>
-
 <!-- 시작 화면 -->
 <div id="start-screen">
   <h1>Nine Men's Morris</h1>
@@ -117,16 +166,17 @@ button:hover{
 
 <!-- 게임 화면 -->
 <div id="game-screen" class="hidden">
-  <div id="mode-text"></div>
-  <div id="turn-text"></div>
-  <div id="role-text" style="font-size:13px;color:#4b5563;margin-bottom:8px;"></div>
+  <div id="info-bar">
+    <div id="mode-text"></div>
+    <div id="turn-text"></div>
+  </div>
+  <div id="role-text"></div>
 
   <div id="board-wrapper">
     <div id="board">
-      <!-- 이동 경로용 SVG -->
+      <!-- adjacency 기반 선 -->
       <svg id="edges" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
 
-      <!-- 24개 점 -->
       <!-- 바깥 8 -->
       <div class="cell empty" data-index="0"  style="left:10%; top:10%;"></div>
       <div class="cell empty" data-index="1"  style="left:50%; top:10%;"></div>
@@ -159,40 +209,53 @@ button:hover{
     </div>
   </div>
 
-  <div id="hint-text" style="margin-top:8px;font-size:13px;color:#4b5563;"></div>
-
+  <div id="hint-text"></div>
   <button id="btn-back" style="margin-top:10px;">처음으로</button>
 </div>
 
 <!-- 결과 화면 -->
 <div id="result-overlay" class="hidden">
   <div id="result-box">
-    <div id="result-message" style="font-size:22px;margin-bottom:8px;"></div>
-    <div id="result-detail" style="font-size:13px;color:#e5e7eb;margin-bottom:16px;"></div>
+    <div id="result-message"></div>
+    <p id="result-detail"></p>
     <button id="btn-restart">같은 모드로 다시 하기</button>
     <button id="btn-to-start">처음 화면으로</button>
   </div>
 </div>
 
 <script>
-// ===== 상수 & 상태 =====
+/* ===== 상수 & 상태 ===== */
 const MODE = { SINGLE:'single', MULTI:'multi' };
 const EMPTY = null, WHITE='W', BLACK='B';
 const MAX_PIECES = 9;
-const AI_DELAY = 500; // AI 딜레이 0.5초
+const AI_DELAY = 650; // 0.5초 → 30% 증가
 
 let mode = null;
 let board = Array(24).fill(EMPTY);
 let currentSide = WHITE;
+let piecesToPlace = { W:9, B:9 }; // 포석으로 올릴 말 수
+let pieceCount   = { W:0, B:0 };  // 현재 판 위 말 수
+
 let humanSide = null;
 let aiSide = null;
-let placed = { W:0, B:0 }; // 포석으로 올린 말 수
-let count  = { W:0, B:0 }; // 현재 판 위 말 수
-let selectedIndex = null;
 let gameOver = false;
-let pendingRemovalSide = null; // 밀 만든 쪽이 제거를 기다리는 상태
+let mustRemoveSide = null;   // 밀을 만들어서 제거해야 하는 쪽
+let selectedIndex = null;
 
-// 좌표 (퍼센트)
+/* DOM */
+const startScreen   = document.getElementById('start-screen');
+const gameScreen    = document.getElementById('game-screen');
+const resultOverlay = document.getElementById('result-overlay');
+const resultMessage = document.getElementById('result-message');
+const resultDetail  = document.getElementById('result-detail');
+const modeText      = document.getElementById('mode-text');
+const turnText      = document.getElementById('turn-text');
+const roleText      = document.getElementById('role-text');
+const hintText      = document.getElementById('hint-text');
+const boardEl       = document.getElementById('board');
+const edgesSvg      = document.getElementById('edges');
+
+/* 좌표 (퍼센트) */
 const coord = {
   0:{x:10,y:10}, 1:{x:50,y:10}, 2:{x:90,y:10},
   3:{x:20,y:20}, 4:{x:50,y:20}, 5:{x:80,y:20},
@@ -203,8 +266,8 @@ const coord = {
  21:{x:10,y:90},22:{x:50,y:90},23:{x:90,y:90}
 };
 
-// 인접 리스트 (여기에만 선 그리고 이동 허용)
-const adj = {
+/* 인접 리스트 (이동 가능 경로 = 여기만 선 그림) */
+const neighbors = {
   0:[1,9],
   1:[0,2,4],
   2:[1,14],
@@ -231,372 +294,412 @@ const adj = {
  23:[14,22]
 };
 
-// 밀 패턴 (3개 일직선)
+/* 밀(3개 일직선, 대각선 없음) */
 const mills = [
-  [0,1,2],[3,4,5],[6,7,8],
-  [15,16,17],[18,19,20],[21,22,23],
+  [0,1,2],[3,4,5],[6,7,8],[9,10,11],
+  [12,13,14],[15,16,17],[18,19,20],[21,22,23],
   [0,9,21],[3,10,18],[6,11,15],
-  [8,12,17],[5,13,20],[2,14,23],
-  [1,4,7],[16,19,22]
+  [1,4,7],[16,19,22],
+  [8,12,17],[5,13,20],[2,14,23]
 ];
 
 const otherSide = s => s===WHITE?BLACK:WHITE;
-const isMovingPhase = () => placed.W>=MAX_PIECES && placed.B>=MAX_PIECES;
-const cellEl = i => document.querySelector(`.cell[data-index="${i}"]`);
+const isMovingPhase = () => piecesToPlace.W===0 && piecesToPlace.B===0;
+const cellEl = i => boardEl.querySelector('.cell[data-index="'+i+'"]');
 
-// ===== 라인 그리기 =====
+/* ===== 라인 그리기 (adjacency → SVG) ===== */
 (function drawEdges(){
-  const svg=document.getElementById('edges');
-  const drawn=new Set();
-  for(const [aStr, ns] of Object.entries(adj)){
-    const a=Number(aStr);
-    for(const b of ns){
+  const drawn = new Set();
+  for(const [aStr, list] of Object.entries(neighbors)){
+    const a = Number(aStr);
+    for(const b of list){
       const key = a<b ? `${a}-${b}` : `${b}-${a}`;
       if(drawn.has(key)) continue;
       drawn.add(key);
-      const p1=coord[a], p2=coord[b];
-      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      const p1 = coord[a], p2 = coord[b];
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
       line.setAttribute('x1',p1.x);
       line.setAttribute('y1',p1.y);
       line.setAttribute('x2',p2.x);
       line.setAttribute('y2',p2.y);
-      svg.appendChild(line);
+      edgesSvg.appendChild(line);
     }
   }
 })();
 
-// ===== 유틸 =====
-function hasMill(idx, side){
-  return mills.some(m => m.includes(idx) && m.every(i => board[i]===side));
+/* ===== 유틸 ===== */
+function clearSelection(){
+  if(selectedIndex!==null){
+    const el = cellEl(selectedIndex);
+    if(el) el.classList.remove('selected');
+  }
+  selectedIndex=null;
 }
-function hasAnyMove(side){
-  if(count[side]<=2) return false;
+function resetBoardVisual(){
+  boardEl.querySelectorAll('.cell').forEach(c=>{
+    c.className='cell empty';
+  });
+}
+function placePiece(i,side){
+  board[i]=side;
+  pieceCount[side]++;
+  const el=cellEl(i);
+  if(el){
+    el.classList.remove('empty','W','B','selected');
+    el.classList.add(side);
+  }
+}
+function movePiece(from,to,side){
+  board[from]=EMPTY;
+  board[to]=side;
+  const a=cellEl(from), b=cellEl(to);
+  if(a) a.className='cell empty';
+  if(b){
+    b.classList.remove('empty','W','B','selected');
+    b.classList.add(side);
+  }
+}
+function removePiece(i,side){
+  if(board[i]!==side) return;
+  board[i]=EMPTY;
+  pieceCount[side]--;
+  const el=cellEl(i);
+  if(el) el.className='cell empty';
+}
+function isMillAt(i,side){
+  return mills.some(m=>m.includes(i) && m.every(j=>board[j]===side));
+}
+function existsRemovableOpponentPiece(forSide){
+  const opp=otherSide(forSide);
+  return pieceCount[opp]>0;
+}
+function canRemoveThis(i,removerSide){
+  const opp=otherSide(removerSide);
+  return board[i]===opp;
+}
+function hasAnyLegalMove(side){
+  // 이동 단계에서만 호출됨
+  if(pieceCount[side]<=2) return false;
   for(let i=0;i<24;i++){
     if(board[i]!==side) continue;
-    for(const n of adj[i]) if(board[n]===EMPTY) return true;
+    for(const n of neighbors[i]){
+      if(board[n]===EMPTY) return true;
+    }
   }
   return false;
 }
-function updateBoardUI(){
-  document.querySelectorAll('.cell').forEach(cell=>{
-    const idx=Number(cell.dataset.index);
-    const v=board[idx];
-    cell.classList.remove('empty','W','B','selected');
-    if(v===EMPTY) cell.classList.add('empty'); else cell.classList.add(v);
-  });
+function checkGameOver(afterSide){
+  if(!isMovingPhase()) return false; // 포석 단계에서는 승부 안 남
+  const opp=otherSide(afterSide);
+  if(pieceCount[opp]<=2){
+    endGame(afterSide,'pieces'); return true;
+  }
+  if(!hasAnyLegalMove(opp)){
+    endGame(afterSide,'noMoves'); return true;
+  }
+  return false;
 }
+
+/* ===== UI ===== */
 function updateInfoBar(){
-  const modeText=document.getElementById('mode-text');
-  const turnText=document.getElementById('turn-text');
-  const roleText=document.getElementById('role-text');
-  const hintText=document.getElementById('hint-text');
-
   if(mode===MODE.SINGLE){
-    const who = humanSide===WHITE ? '플레이어: 흰 말' : '플레이어: 검은 말';
-    modeText.textContent=`혼자 게임하기 (${who})`;
+    const who = humanSide===WHITE ? '플레이어 = 흰 말(선공)' : '플레이어 = 검은 말(후공)';
+    modeText.textContent = `모드: 혼자 게임하기 (${who})`;
+    roleText.textContent = humanSide===WHITE ? '플레이어 말: 흰 말' : '플레이어 말: 검은 말';
   }else if(mode===MODE.MULTI){
-    modeText.textContent='둘이 게임하기';
-  }else modeText.textContent='';
-
-  let t=currentSide===WHITE?'흰 말 차례':'검은 말 차례';
-  if(mode===MODE.SINGLE){
-    t += currentSide===humanSide?' (플레이어)':' (컴퓨터)';
-  }
-  turnText.textContent=t;
-
-  roleText.textContent = isMovingPhase()
-    ? '이동 단계: 자신의 말을 인접한 빈 점으로 한 칸 이동합니다.'
-    : '포석 단계: 번갈아 자신의 말을 빈 점에 놓습니다. (각 9개)';
-
-  if(pendingRemovalSide){
-    if(mode===MODE.SINGLE && pendingRemovalSide===aiSide){
-      hintText.textContent='컴퓨터가 말을 제거하는 중...';
-    }else{
-      hintText.textContent='밀 완성! 제거할 상대 말을 클릭하세요.';
-    }
+    modeText.textContent='모드: 둘이 게임하기';
+    roleText.textContent='';
   }else{
-    hintText.textContent='';
+    modeText.textContent='';
+    roleText.textContent='';
+  }
+
+  let turnStr = currentSide===WHITE ? '흰 말 차례' : '검은 말 차례';
+  if(mode===MODE.SINGLE){
+    turnStr += currentSide===humanSide ? ' (플레이어)' : ' (컴퓨터)';
+  }
+  turnText.textContent = turnStr;
+
+  if(mustRemoveSide && mustRemoveSide===currentSide){
+    hintText.textContent='밀 완성! 상대 말을 하나 클릭해서 제거하세요.';
+    return;
+  }
+
+  if(!isMovingPhase()){
+    hintText.textContent='포석 단계: 번갈아 자신의 말을 빈 점에 놓습니다. (각 9개)';
+  }else{
+    hintText.textContent='이동 단계: 자신의 말을 인접한 빈 점으로 한 칸 이동합니다. (대각선·점프 없음)';
   }
 }
-function resetGame(){
-  board=Array(24).fill(EMPTY);
-  currentSide=WHITE;
-  humanSide=null; aiSide=null;
-  placed={W:0,B:0};
-  count={W:0,B:0};
-  selectedIndex=null;
-  pendingRemovalSide=null;
+
+function endGame(winner,reason){
+  gameOver=true;
+  let msg, detail;
+  if(mode===MODE.SINGLE){
+    msg = winner===humanSide ? '플레이어 승!' : '컴퓨터 승!';
+  }else{
+    msg = winner===WHITE ? '흰 말 승!' : '검은 말 승!';
+  }
+  if(reason==='noMoves') detail='상대가 더 이상 움직일 수 없어서 승리했습니다.';
+  else if(reason==='pieces') detail='상대 말이 2개 이하로 남아서 승리했습니다.';
+  else detail='게임 종료';
+
+  resultMessage.textContent=msg;
+  resultDetail.textContent=detail;
+  resultOverlay.classList.remove('hidden');
+}
+
+function initGameState(){
+  board = Array(24).fill(EMPTY);
+  piecesToPlace = {W:9,B:9};
+  pieceCount = {W:0,B:0};
+  currentSide = WHITE;
   gameOver=false;
-  updateBoardUI();
+  mustRemoveSide=null;
+  clearSelection();
+  resetBoardVisual();
+}
+
+function goToGameScreen(){
+  startScreen.classList.add('hidden');
+  gameScreen.classList.remove('hidden');
+}
+function goToStartScreen(){
+  gameScreen.classList.add('hidden');
+  startScreen.classList.remove('hidden');
+  resultOverlay.classList.add('hidden');
+}
+
+function startSingleGame(){
+  mode=MODE.SINGLE;
+  initGameState();
+  humanSide = Math.random()<0.5 ? WHITE : BLACK;
+  aiSide    = otherSide(humanSide);
+  goToGameScreen();
+  updateInfoBar();
+  if(currentSide===aiSide) setTimeout(aiTurn,AI_DELAY);
+}
+function startMultiGame(){
+  mode=MODE.MULTI;
+  humanSide=null; aiSide=null;
+  initGameState();
+  goToGameScreen();
   updateInfoBar();
 }
-function endGame(winner){
-  gameOver=true;
-  const ov=document.getElementById('result-overlay');
-  const msg=document.getElementById('result-message');
-  const detail=document.getElementById('result-detail');
-  msg.textContent = winner===WHITE?'흰 말 승리!':'검은 말 승리!';
-  detail.textContent='상대 말이 2개 이하이거나 더 이상 움직일 수 없습니다.';
-  ov.classList.remove('hidden');
-}
-function computeWinner(moverSide){
-  if(!isMovingPhase()) return null; // 포석 단계에서는 승부 안 남
-  const opp=otherSide(moverSide);
-  if(count[opp]<=2) return moverSide;
-  if(!hasAnyMove(opp)) return moverSide;
-  return null;
+function restartCurrentMode(){
+  resultOverlay.classList.add('hidden');
+  if(mode===MODE.SINGLE) startSingleGame();
+  else if(mode===MODE.MULTI) startMultiGame();
 }
 
-// 한 턴이 끝난 뒤 공통 처리 (포석/이동 모두)
+/* ===== 턴 종료 공통 처리 (포석/이동 모두) ===== */
 function onMoveFinished(lastIdx){
   const side=currentSide;
-  const opp=otherSide(side);
+  const opp = otherSide(side);
 
-  // 밀 완성 → 제거 모드 진입
-  if(hasMill(lastIdx,side) && count[opp]>0){
-    pendingRemovalSide = side;
-    updateBoardUI();
+  // 밀 완성 → 제거 모드
+  if(isMillAt(lastIdx,side) && existsRemovableOpponentPiece(side)){
+    mustRemoveSide = side;
     updateInfoBar();
-
-    // AI가 만든 밀이면, 즉시 자동 제거
+    // AI가 만든 밀인 경우, 제거도 AI가 담당
     if(mode===MODE.SINGLE && side===aiSide){
-      const targets=[];
-      for(let i=0;i<24;i++) if(board[i]===opp) targets.push(i);
-      if(targets.length){
-        const t=targets[Math.floor(Math.random()*targets.length)];
-        board[t]=EMPTY;
-        count[opp]--;
-      }
-      pendingRemovalSide=null;
-      updateBoardUI();
-
-      const w=computeWinner(side);
-      if(w){ endGame(w); return; }
-
-      currentSide=opp;
-      updateInfoBar();
-      if(mode===MODE.SINGLE && currentSide===aiSide) setTimeout(aiTurn,AI_DELAY);
+      setTimeout(aiTurn,AI_DELAY);
     }
-    // 사람이 만든 밀이면, 여기서 멈추고 클릭으로 제거 기다림
     return;
   }
 
-  // 밀이 없었으면 → 승부 체크 후 턴 넘김
-  const w=computeWinner(side);
-  if(w){ endGame(w); return; }
-
-  currentSide=opp;
+  // 밀이 아니면 → 승부 체크 후 턴 넘김
+  if(checkGameOver(side)) return;
+  currentSide = opp;
   updateInfoBar();
-  if(mode===MODE.SINGLE && currentSide===aiSide) setTimeout(aiTurn,AI_DELAY);
+  if(mode===MODE.SINGLE && currentSide===aiSide){
+    setTimeout(aiTurn,AI_DELAY);
+  }
 }
 
-// ===== 사람 클릭 처리 =====
-function handleCellClick(e){
+/* ===== 사람 클릭 처리 ===== */
+function handleBoardClick(idx){
   if(gameOver) return;
-  const target=e.target.closest('.cell');
-  if(!target) return;
-  const idx=Number(target.dataset.index);
-  if(Number.isNaN(idx)) return;
 
-  // 제거 모드일 때: 상대 말 클릭해서 제거
-  if(pendingRemovalSide){
-    const remover=pendingRemovalSide;
-    const victimSide=otherSide(remover);
+  // 제거 단계
+  if(mustRemoveSide){
+    // 싱글에서 AI 차례라면 사람 입력 무시
+    if(mode===MODE.SINGLE && mustRemoveSide===aiSide) return;
+    if(mustRemoveSide!==currentSide) return;
+    if(!canRemoveThis(idx,currentSide)) return;
 
-    // 싱글에서 AI가 제거해야 하는 턴이면 사람 입력 무시
-    if(mode===MODE.SINGLE && remover===aiSide) return;
-
-    if(board[idx]!==victimSide) return; // 상대 말만 제거 가능
-
-    board[idx]=EMPTY;
-    count[victimSide]--;
-    pendingRemovalSide=null;
-    updateBoardUI();
-
-    const w=computeWinner(remover);
-    if(w){ endGame(w); return; }
-
-    currentSide=victimSide; // 제거한 사람 턴 끝 → 상대에게 넘김
+    const opp = otherSide(currentSide);
+    removePiece(idx,opp);
+    mustRemoveSide=null;
+    if(checkGameOver(currentSide)) return;
+    currentSide = opp;
     updateInfoBar();
-    if(mode===MODE.SINGLE && currentSide===aiSide) setTimeout(aiTurn,AI_DELAY);
+    if(mode===MODE.SINGLE && currentSide===aiSide){
+      setTimeout(aiTurn,AI_DELAY);
+    }
     return;
   }
 
-  // AI 차례엔 입력 막기
+  // AI 차례엔 아예 입력 막기
   if(mode===MODE.SINGLE && currentSide===aiSide) return;
 
   // 포석 단계
   if(!isMovingPhase()){
     if(board[idx]!==EMPTY) return;
-    board[idx]=currentSide;
-    placed[currentSide]++; count[currentSide]++;
-    updateBoardUI();
+    placePiece(idx,currentSide);
+    piecesToPlace[currentSide]--;
     onMoveFinished(idx);
     return;
   }
 
   // 이동 단계
+  const side=currentSide;
   if(selectedIndex===null){
-    if(board[idx]!==currentSide) return;
+    if(board[idx]!==side) return;
     selectedIndex=idx;
-    cellEl(idx).classList.add('selected');
-    return;
+    cellEl(idx)?.classList.add('selected');
   }else{
     if(idx===selectedIndex){
-      cellEl(idx).classList.remove('selected');
-      selectedIndex=null;
+      clearSelection();
       return;
     }
     if(board[idx]!==EMPTY){
-      // 같은 편 다른 말 선택으로 변경
-      if(board[idx]===currentSide){
-        cellEl(selectedIndex).classList.remove('selected');
+      if(board[idx]===side){
+        cellEl(selectedIndex)?.classList.remove('selected');
         selectedIndex=idx;
-        cellEl(idx).classList.add('selected');
+        cellEl(idx)?.classList.add('selected');
       }
       return;
     }
     const from=selectedIndex, to=idx;
-    if(!adj[from].includes(to)) return;
-    board[from]=EMPTY;
-    board[to]=currentSide;
-    cellEl(from).classList.remove('selected');
-    selectedIndex=null;
-    updateBoardUI();
+    if(!neighbors[from].includes(to)) return; // 점프 금지
+    movePiece(from,to,side);
+    clearSelection();
     onMoveFinished(to);
   }
 }
 
-// ===== AI =====
+/* ===== AI ===== */
 function aiTurn(){
   if(gameOver) return;
   if(currentSide!==aiSide) return;
-  // 제거 모드에서는 onMoveFinished가 이미 AI 쪽 제거를 처리하므로,
-  // 여기까지 오면 항상 "말 놓거나 움직이는" 턴이다.
 
-  // 포석 단계
+  // 1) 제거 모드일 때
+  if(mustRemoveSide===aiSide){
+    const target = pickAiRemoveTarget(aiSide);
+    if(target!==null){
+      const opp=otherSide(aiSide);
+      removePiece(target,opp);
+      mustRemoveSide=null;
+      if(checkGameOver(aiSide)) return;
+      currentSide = opp;
+      updateInfoBar();
+    }
+    return;
+  }
+
+  // 2) 포석 단계
   if(!isMovingPhase()){
-    const empties=[];
-    for(let i=0;i<24;i++) if(board[i]===EMPTY) empties.push(i);
-    if(!empties.length) return;
-
-    const opp = humanSide ?? otherSide(aiSide);
-
-    let choice=null;
-
-    // 1) 내 밀 만드는 수
-    for(const i of empties){
-      board[i]=aiSide;
-      const ok=hasMill(i,aiSide);
-      board[i]=EMPTY;
-      if(ok){ choice=i; break; }
-    }
-
-    // 2) 상대 밀 막는 수
-    if(choice===null){
-      for(const i of empties){
-        board[i]=opp;
-        const ok=hasMill(i,opp);
-        board[i]=EMPTY;
-        if(ok){ choice=i; break; }
-      }
-    }
-
-    // 3) 그 외 랜덤
-    if(choice===null) choice=empties[Math.floor(Math.random()*empties.length)];
-
-    board[choice]=aiSide;
-    placed[aiSide]++; count[aiSide]++;
-    updateBoardUI();
-    onMoveFinished(choice);
+    const idx = pickAiPlaceIndex(aiSide);
+    if(idx===null) return;
+    placePiece(idx,aiSide);
+    piecesToPlace[aiSide]--;
+    onMoveFinished(idx); // 이 안에서 밀/승부/턴 전환 다 처리
     return;
   }
 
-  // 이동 단계
-  const moves=[];
-  for(let from=0;from<24;from++){
-    if(board[from]!==aiSide) continue;
-    for(const to of adj[from]) if(board[to]===EMPTY) moves.push({from,to});
-  }
-  if(!moves.length){
-    const w=computeWinner(aiSide);
-    if(w) endGame(w);
+  // 3) 이동 단계
+  const move = pickAiMove(aiSide);
+  if(!move){
+    // 이동 가능한 수가 없으면 패배
+    if(!hasAnyLegalMove(aiSide)){
+      endGame(otherSide(aiSide),'noMoves');
+    }
     return;
   }
-
-  const opp = humanSide ?? otherSide(aiSide);
-  let chosen=null;
-
-  // 1) 밀 만드는 이동
-  for(const m of moves){
-    board[m.from]=EMPTY; board[m.to]=aiSide;
-    const ok=hasMill(m.to,aiSide);
-    board[m.to]=EMPTY; board[m.from]=aiSide;
-    if(ok){ chosen=m; break; }
-  }
-
-  // 2) 상대 밀 막는 이동 (대략적으로: 상대가 그 칸에 두면 밀인 자리 차지)
-  if(!chosen){
-    for(const m of moves){
-      board[m.from]=EMPTY; board[m.to]=opp;
-      const ok=hasMill(m.to,opp);
-      board[m.to]=EMPTY; board[m.from]=aiSide;
-      if(ok){ chosen=m; break; }
-    }
-  }
-
-  // 3) 랜덤 이동
-  if(!chosen) chosen=moves[Math.floor(Math.random()*moves.length)];
-
-  board[chosen.from]=EMPTY;
-  board[chosen.to]=aiSide;
-  updateBoardUI();
-  onMoveFinished(chosen.to);
+  movePiece(move.from,move.to,aiSide);
+  onMoveFinished(move.to);
 }
 
-// ===== 이벤트 바인딩 =====
-document.querySelectorAll('.cell').forEach(c=>{
-  c.addEventListener('click',handleCellClick);
+function pickAiPlaceIndex(side){
+  const opp=otherSide(side);
+  // 1) 나 밀 만드는 자리
+  for(let i=0;i<24;i++){
+    if(board[i]!==EMPTY) continue;
+    board[i]=side;
+    const ok=isMillAt(i,side);
+    board[i]=EMPTY;
+    if(ok) return i;
+  }
+  // 2) 상대 밀 막는 자리
+  for(let i=0;i<24;i++){
+    if(board[i]!==EMPTY) continue;
+    board[i]=opp;
+    const ok=isMillAt(i,opp);
+    board[i]=EMPTY;
+    if(ok) return i;
+  }
+  // 3) 랜덤
+  const empties=[];
+  for(let i=0;i<24;i++) if(board[i]===EMPTY) empties.push(i);
+  if(!empties.length) return null;
+  return empties[Math.floor(Math.random()*empties.length)];
+}
+
+function pickAiRemoveTarget(side){
+  const opp=otherSide(side);
+  const cand=[];
+  for(let i=0;i<24;i++) if(board[i]===opp) cand.push(i);
+  if(!cand.length) return null;
+  return cand[Math.floor(Math.random()*cand.length)];
+}
+
+function pickAiMove(side){
+  const opp=otherSide(side);
+  const moves=[];
+  for(let from=0;from<24;from++){
+    if(board[from]!==side) continue;
+    for(const to of neighbors[from]){
+      if(board[to]===EMPTY) moves.push({from,to});
+    }
+  }
+  if(!moves.length) return null;
+
+  // 1) 나 밀 만드는 이동
+  for(const m of moves){
+    board[m.from]=EMPTY; board[m.to]=side;
+    const ok=isMillAt(m.to,side);
+    board[m.to]=EMPTY; board[m.from]=side;
+    if(ok) return m;
+  }
+  // 2) 상대 밀 막는 이동
+  for(const m of moves){
+    board[m.from]=EMPTY; board[m.to]=opp;
+    const ok=isMillAt(m.to,opp);
+    board[m.to]=EMPTY; board[m.from]=side;
+    if(ok) return m;
+  }
+  // 3) 랜덤
+  return moves[Math.floor(Math.random()*moves.length)];
+}
+
+/* 이벤트 바인딩 */
+document.getElementById('btn-single').addEventListener('click',startSingleGame);
+document.getElementById('btn-multi').addEventListener('click',startMultiGame);
+document.getElementById('btn-back').addEventListener('click',goToStartScreen);
+document.getElementById('btn-restart').addEventListener('click',restartCurrentMode);
+document.getElementById('btn-to-start').addEventListener('click',()=>{
+  resultOverlay.classList.add('hidden');
+  goToStartScreen();
 });
-
-document.getElementById('btn-single').onclick=()=>{
-  mode=MODE.SINGLE;
-  resetGame();
-  // 선/후공 랜덤
-  humanSide = Math.random()<0.5 ? WHITE : BLACK;
-  aiSide = otherSide(humanSide);
-  document.getElementById('start-screen').classList.add('hidden');
-  document.getElementById('game-screen').classList.remove('hidden');
-  updateInfoBar();
-  if(currentSide===aiSide) setTimeout(aiTurn,AI_DELAY);
-};
-
-document.getElementById('btn-multi').onclick=()=>{
-  mode=MODE.MULTI;
-  resetGame();
-  document.getElementById('start-screen').classList.add('hidden');
-  document.getElementById('game-screen').classList.remove('hidden');
-  updateInfoBar();
-};
-
-document.getElementById('btn-back').onclick=()=>{
-  document.getElementById('game-screen').classList.add('hidden');
-  document.getElementById('start-screen').classList.remove('hidden');
-};
-
-document.getElementById('btn-restart').onclick=()=>{
-  document.getElementById('result-overlay').classList.add('hidden');
-  document.getElementById('game-screen').classList.add('hidden');
-  document.getElementById('start-screen').classList.remove('hidden');
-};
-
-document.getElementById('btn-to-start').onclick=()=>{
-  document.getElementById('result-overlay').classList.add('hidden');
-  document.getElementById('game-screen').classList.add('hidden');
-  document.getElementById('start-screen').classList.remove('hidden');
-};
+boardEl.addEventListener('click',e=>{
+  const cell=e.target.closest('.cell');
+  if(!cell) return;
+  const idx=Number(cell.dataset.index);
+  if(Number.isNaN(idx)) return;
+  handleBoardClick(idx);
+});
 </script>
-
 </body>
 </html>
 
